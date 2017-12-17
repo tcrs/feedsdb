@@ -1,0 +1,52 @@
+ul {
+	list-style: none;
+	margin-top: 0;
+	padding-left: 0;
+}
+
+ul li {
+	padding-left: 1.44em;
+	line-height: 1.5em;
+}
+
+ul li:nth-child(odd) {
+	background-color: #eeeeee;
+}
+
+ul li img {
+	width: 1em;
+	height: 1em;
+}
+
+div.updates img {
+	width: 1em;
+	height: 1em;
+}
+
+div.day-date {
+	text-align: right;
+	font-style: italic;
+	font-weight: bold;
+}
+
+div.day {
+	margin: 1ex ;
+	border: 1px;
+	border-style: dotted;
+}
+
+div.deletes {
+	display: table;
+}
+
+div.deletes form {
+	display: table-row;
+}
+
+div.deletes form span {
+	display: table-cell;
+	border-style: solid;
+	border-color: lightgray;
+	border-width: thin;
+	padding: 1ex;
+}
