@@ -102,7 +102,7 @@ def serve_cgi(conn, args):
         items = ET.SubElement(day, 'ul')
         for link, title, feed_name, icon in conn.cursor().execute('SELECT link, title, items.feed, feeds.icon FROM items INNER JOIN feeds on items.feed = feeds.name WHERE pub_day = ? ORDER BY priority, pub_date', (day_date,)):
             item = ET.SubElement(items, 'li')
-            ET.SubElement(item, 'img', attrib={'class': feed_name, 'src': icon})
+            ET.SubElement(item, 'img', attrib={'class': feed_name, 'src': icon or ''})
             ET.SubElement(item, 'a', href=link).text = title
 
     # Simple form to add a feed
