@@ -156,7 +156,7 @@ if __name__ == '__main__':
     add_parser = subparsers.add_parser('add', help='Add a feed')
     add_parser.add_argument('--priority', type=int, default=0, help='Priority of the items from this feed')
     add_parser.add_argument('--poll-period', type=parse_period, default='1h', help='Maximum poll frequency (seconds)')
-    add_parser.add_argument('--prune-period', type=parse_period, default='7d', help='Prune feed items older than this (seconds)')
+    add_parser.add_argument('--prune-period', type=parse_period, default='30d', help='Prune feed items older than this')
     add_parser.add_argument('--icon-url', help='URL of favicon to show next to feed items')
     add_parser.add_argument('name')
     add_parser.add_argument('url')
