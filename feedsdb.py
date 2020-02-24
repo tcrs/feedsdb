@@ -139,8 +139,8 @@ def add_feed(conn, args):
 
 @with_db
 def list_feeds(conn, args):
-    for name, url in conn.execute('SELECT name, url FROM feeds'):
-        print('{}: {}'.format(name, url))
+    for name, url, prio in conn.execute('SELECT name, url, priority FROM feeds'):
+        print('{}: {} ({})'.format(name, url, prio))
 
 def parse_period(s):
     num = int(s[:-1])
