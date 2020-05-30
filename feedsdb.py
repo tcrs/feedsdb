@@ -180,7 +180,7 @@ def make_pdf(conn, args):
 
     first_time = int(time.time()) - args.period
     articles = []
-    for i, (link, title, feed_name) in enumerate(conn.execute('SELECT link, title, items.feed FROM items INNER JOIN feeds on items.feed = feeds.name WHERE pub_date >= ? ORDER BY priority, pub_date', (first_time,))):
+    for i, (link, title, feed_name) in enumerate(conn.execute('SELECT link, title, items.feed FROM items INNER JOIN feeds on items.feed = feeds.name WHERE pub_date >= ? ORDER BY pub_date DESC', (first_time,))):
         articles.append((link, feed_name, title, os.path.join(temp_dir, '{:04d}.pdf'.format(i))))
 
     if not args.non_interactive:
