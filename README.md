@@ -32,6 +32,10 @@ Each article is downloaded using `wkhtmltopdf` to a temporary file and then they
 are all stitched together using `pymupdf`. A ToC/Outline is added to the final
 PDF with an entry for each article to make it easy to jump to articles.
 
+By default (disable with `--no-append`) if the output PDF file already exists
+the selected articles will be appended to it rather than overwriting the whole
+thing.
+
 Caveats:
 
  - The arguments to `wkhtmltopdf` are largely hardcoded at the moment to match

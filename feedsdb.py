@@ -217,7 +217,13 @@ def make_pdf(conn, args):
 
     print('Merging...')
     joined = fitz.open()
-    joined_toc = []
+    joined_toc = joined.getToC()
+    if os.path.isfile(args.output) and not args.no_append:
+        orig = fitz.open(args.output)
+        joined.insertPDF(orig)
+        joined_toc.extend(orig.getToC())
+        orig.close()
+
     for link, feed_name, title, pdf in articles:
         if os.path.isfile(pdf):
             inp_doc = fitz.open(pdf)
@@ -255,6 +261,7 @@ if __name__ == '__main__':
     list_parser.set_defaults(func=list_feeds)
 
     pdf_parser = subparsers.add_parser('pdf', help='Make a pdf file of articles')
+    pdf_parser.add_argument('--no-append', action='store_true', help='By default if the output PDF exists new articles will be appended to the end. This forces a new document to be created and overwrite the exiting one')
     pdf_parser.add_argument('--period', '-p', type=parse_period, default='1d', help='How long in the past to start listing articles from (default 1 day)')
     pdf_parser.add_argument('--keep', action='store_true', help='Do not delete temp folder')
     pdf_parser.add_argument('--wkhtmltopdf-path', help='Path to wkhtmltopdf binary')
