@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+import os
+import tempfile
+import subprocess
+import shutil
 import sys
 import time
 import calendar
@@ -142,6 +146,86 @@ def list_feeds(conn, args):
     for name, url, prio in conn.execute('SELECT name, url, priority FROM feeds'):
         print('{}: {} ({})'.format(name, url, prio))
 
+@with_db
+def make_pdf(conn, args):
+    try:
+        import fitz
+    except ModuleNotFoundError:
+        print('Please install the pymupdf (fitz) module')
+        raise
+
+    wkhtmltopdf = args.wkhtmltopdf_path
+    if wkhtmltopdf is None:
+        wkhtmltopdf = shutil.which('wkhtmltopdf')
+    if wkhtmltopdf is None:
+        print('Please install wkhtmltopdf or specify path to binary with --wkhtmltopdf-path')
+        sys.exit(1)
+
+    def topdfcmd(url, pdf, title):
+        return [wkhtmltopdf,
+            '--grayscale', '--disable-javascript',
+            '--page-width', '6.2in', '--page-height', '8.26in', '--dpi', '226',
+            '--custom-header', 'User-Agent', 'Mozilla/5.0 (Windows NT 10.0; rv:68.0) Gecko/20100101 Firefox/68.0', '--custom-header-propagation',
+            '--margin-top', '2mm', '--margin-bottom', '2mm', '--margin-left', '2mm', '--margin-right', '2mm',
+            '--title', title,
+            url, pdf]
+
+    temp_dir = tempfile.mkdtemp()
+    print('Using temp folder: ' + temp_dir)
+
+    first_time = int(time.time()) - args.period
+    articles = []
+    for i, (link, title, feed_name) in enumerate(conn.execute('SELECT link, title, items.feed FROM items INNER JOIN feeds on items.feed = feeds.name WHERE pub_date >= ? ORDER BY priority, pub_date', (first_time,))):
+        articles.append((link, feed_name, title, os.path.join(temp_dir, '{:04d}.pdf'.format(i))))
+
+    if not args.non_interactive:
+        with tempfile.NamedTemporaryFile(delete=False, mode='w') as f:
+            filename = f.name
+            for i, (link, feed_name, title, _) in enumerate(articles):
+                f.write('{:04d} {} {}\n'.format(i, feed_name, title))
+        ret = subprocess.run([os.getenv('EDITOR', 'vi'), filename])
+        keep_set = set()
+        if ret.returncode == 0:
+            with open(filename, 'r') as f:
+                for line in f:
+                    s = line.split(' ', 1)
+                    try:
+                        keep_set.add(int(s[0]))
+                    except ValueError:
+                        pass
+        os.unlink(filename)
+
+        articles = [x for i, x in enumerate(articles)
+            if i in keep_set]
+
+    if not articles:
+        print('No articles to download')
+        sys.exit(2)
+
+    for i, (link, feed_name, title, pdf) in enumerate(articles):
+        print('Downloading ({}/{}) {}'.format(i + 1, len(articles), link))
+        ret = subprocess.run(topdfcmd(link, pdf, feed_name + ': ' + title), capture_output=True)
+        if ret.returncode != 0:
+            print('ERROR:')
+            print(ret.stdout.decode(errors='replace'))
+            print(ret.stderr.decode(errors='replace'))
+
+    print('Merging...')
+    joined = fitz.open()
+    joined_toc = []
+    for link, feed_name, title, pdf in articles:
+        if os.path.isfile(pdf):
+            inp_doc = fitz.open(pdf)
+            joined_toc.append((1, feed_name + ': ' + title, joined.pageCount + 1))
+            joined.insertPDF(inp_doc, annots=False)
+            inp_doc.close()
+    joined.setToC(joined_toc)
+    joined.save(args.output, garbage=4, clean=True, deflate=True, incremental=False)
+
+    if not args.keep:
+        print('Deleting temp folder')
+        shutil.rmtree(temp_dir)
+
 def parse_period(s):
     num = int(s[:-1])
     span = {'s': 'seconds', 'm': 'minutes', 'h': 'hours', 'd': 'days'}[s[-1]]
@@ -164,6 +248,14 @@ if __name__ == '__main__':
 
     list_parser = subparsers.add_parser('list', help='List feeds')
     list_parser.set_defaults(func=list_feeds)
+
+    pdf_parser = subparsers.add_parser('pdf', help='Make a pdf file of articles')
+    pdf_parser.add_argument('--period', '-p', type=parse_period, default='1d', help='How long in the past to start listing articles from (default 1 day)')
+    pdf_parser.add_argument('--keep', action='store_true', help='Do not delete temp folder')
+    pdf_parser.add_argument('--wkhtmltopdf-path', help='Path to wkhtmltopdf binary')
+    pdf_parser.add_argument('-n', '--non-interactive', action='store_true', help='Do not launch an editor to interactively select which articles to download')
+    pdf_parser.add_argument('output', help='Output PDF file')
+    pdf_parser.set_defaults(func=make_pdf)
 
     del_parser = subparsers.add_parser('del', help='Delete a feed')
     del_parser.add_argument('name')
