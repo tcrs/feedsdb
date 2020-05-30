@@ -23,6 +23,11 @@ def do_delete(conn, name):
     conn.execute('DELETE FROM items WHERE feed = ?', (name,))
 
 def do_update(conn):
+    # Some feeds don't have IDs on the entries, so just fall back to using the
+    # link :s
+    def entry_id(e):
+        return getattr(e, 'id', e.link)
+
     now = int(time.time())
     conn.execute('UPDATE feeds SET updated = 0')
     for name, url, etag, modified in conn.cursor().execute('SELECT name, url, etag, modified FROM feeds WHERE last_update + poll_period < ?', (now,)):
@@ -39,7 +44,7 @@ def do_update(conn):
             day = time.strftime('%Y-%m-%d', dt)
             timestamp = calendar.timegm(dt)
             conn.execute('INSERT OR REPLACE INTO items (feed, id, title, link, pub_date, pub_day) VALUES(?, ?, ?, ?, ?, ?)',
-                (name, entry.id, entry.title, entry.link, timestamp, day))
+                (name, entry_id(entry), entry.title, entry.link, timestamp, day))
         conn.commit()
     conn.execute('''DELETE FROM items WHERE rowid IN (
         SELECT items.rowid FROM items INNER JOIN feeds ON items.feed = feeds.name
