@@ -187,7 +187,7 @@ def make_pdf(conn, args):
         with tempfile.NamedTemporaryFile(delete=False, mode='w') as f:
             filename = f.name
             for i, (link, feed_name, title, _) in enumerate(articles):
-                f.write('{:04d} {} {}\n'.format(i, feed_name, title))
+                f.write('{:04d} {} [{}] ({})\n'.format(i, title, feed_name, link))
         ret = subprocess.run([os.getenv('EDITOR', 'vi'), filename])
         keep_set = set()
         if ret.returncode == 0:
