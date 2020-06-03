@@ -22,7 +22,7 @@ def do_delete(conn, name):
     conn.execute('DELETE FROM feeds WHERE name = ?', (name,))
     conn.execute('DELETE FROM items WHERE feed = ?', (name,))
 
-def do_update(conn):
+def do_update(conn, force=False):
     # Some feeds don't have IDs on the entries, so just fall back to using the
     # link :s
     def entry_id(e):
@@ -30,7 +30,12 @@ def do_update(conn):
 
     now = int(time.time())
     conn.execute('UPDATE feeds SET updated = 0')
-    for name, url, etag, modified in conn.cursor().execute('SELECT name, url, etag, modified FROM feeds WHERE last_update + poll_period < ?', (now,)):
+    cursor = conn.cursor()
+    if force:
+        cursor.execute('SELECT name, url, etag, modified FROM feeds')
+    else:
+        cursor.execute('SELECT name, url, etag, modified FROM feeds WHERE last_update + poll_period < ?', (now,))
+    for name, url, etag, modified in cursor:
         feed = feedparser.parse(url, etag=etag, modified=modified)
         conn.execute('UPDATE feeds SET last_update = ? WHERE name = ?', (now, name))
         if not feed.feed:
@@ -274,7 +279,8 @@ if __name__ == '__main__':
     del_parser.set_defaults(func=with_db(lambda conn, args: do_delete(conn, args.name)))
 
     update_parser = subparsers.add_parser('update', help='Update feeds')
-    update_parser.set_defaults(func=with_db(lambda conn, args: do_update(conn)))
+    update_parser.add_argument('--force', action='store_true', help='Ignore poll period and update all feeds')
+    update_parser.set_defaults(func=with_db(lambda conn, args: do_update(conn, args.force)))
 
     args = parser.parse_args()
     args.func(args)
