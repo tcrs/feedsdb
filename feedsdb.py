@@ -48,8 +48,8 @@ def do_update(conn, force=False):
             dt = getattr(entry, 'published_parsed', getattr(entry, 'updated_parsed'))
             day = time.strftime('%Y-%m-%d', dt)
             timestamp = calendar.timegm(dt)
-            conn.execute('INSERT OR REPLACE INTO items (feed, id, title, link, pub_date, pub_day) VALUES(?, ?, ?, ?, ?, ?)',
-                (name, entry_id(entry), entry.title, entry.link, timestamp, day))
+            conn.execute('INSERT OR REPLACE INTO items (feed, id, title, link, comments_link, pub_date, pub_day) VALUES(?, ?, ?, ?, ?, ?, ?)',
+                (name, entry_id(entry), entry.title, entry.link, getattr(entry, 'comments', ''), timestamp, day))
         conn.commit()
     conn.execute('''DELETE FROM items WHERE rowid IN (
         SELECT items.rowid FROM items INNER JOIN feeds ON items.feed = feeds.name
@@ -65,8 +65,15 @@ def with_db(fn):
                     last_update INT, poll_period INT, prune_period INT, updated INT,
                     icon TEXT,
                     etag TEXT, modified TEXT)''')
-            conn.execute('''CREATE TABLE IF NOT EXISTS items (id text, feed text, title text, link text, pub_date INT, pub_day TEXT, PRIMARY KEY (feed, id))''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS items (id text, feed text, title text, link text, comments_link text, pub_date INT, pub_day TEXT, PRIMARY KEY (feed, id))''')
+
+            # Old version didn't have comments_link, check and add it if required
+            try:
+                conn.execute('''SELECT comments_link FROM items LIMIT 1''')
+            except sqlite3.OperationalError:
+                conn.execute('''ALTER TABLE items ADD COLUMN comments_link text''')
             conn.commit()
+
             fn(conn, cmd_args, *args, **kwargs)
             conn.commit()
     return wrapper
@@ -180,18 +187,23 @@ def make_pdf(conn, args):
             '--title', title,
             url, pdf]
 
-    temp_dir = tempfile.mkdtemp()
-    print('Using temp folder: ' + temp_dir)
-
     first_time = int(time.time()) - args.period
     articles = []
-    for i, (link, title, feed_name) in enumerate(conn.execute('SELECT link, title, items.feed FROM items INNER JOIN feeds on items.feed = feeds.name WHERE pub_date >= ? ORDER BY pub_date DESC', (first_time,))):
-        articles.append((link, feed_name, title, os.path.join(temp_dir, '{:04d}.pdf'.format(i))))
+
+    # Drop duplicate articles, I see quite a few duplicates from new aggregators
+    # so this is useful. Can't see any downside?
+    seen_links = set()
+    for link, title, feed_name, comments_link in conn.execute('SELECT link, title, items.feed, comments_link FROM items INNER JOIN feeds on items.feed = feeds.name WHERE pub_date >= ? ORDER BY pub_date DESC', (first_time,)):
+        if link not in seen_links:
+            articles.append((link, feed_name, title))
+            if comments_link and not args.no_comments:
+                articles.append((comments_link, '{} (comments)'.format(feed_name), title))
+            seen_links.add(link)
 
     if not args.non_interactive:
         with tempfile.NamedTemporaryFile(delete=False, mode='w') as f:
             filename = f.name
-            for i, (link, feed_name, title, _) in enumerate(articles):
+            for i, (link, feed_name, title) in enumerate(articles):
                 f.write('{:04d} {} [{}] ({})\n'.format(i, title, feed_name, link))
         ret = subprocess.run([os.getenv('EDITOR', 'vi'), filename])
         keep_set = set()
@@ -212,9 +224,14 @@ def make_pdf(conn, args):
         print('No articles to download')
         sys.exit(2)
 
-    for i, (link, feed_name, title, pdf) in enumerate(articles):
+    temp_dir = tempfile.mkdtemp()
+    print('Using temp folder: ' + temp_dir)
+    def pdf_path(n):
+        return os.path.join(temp_dir, '{:04d}.pdf'.format(n))
+
+    for i, (link, feed_name, title) in enumerate(articles):
         print('Downloading ({}/{}) {}'.format(i + 1, len(articles), link))
-        ret = subprocess.run(topdfcmd(link, pdf, feed_name + ': ' + title), capture_output=True)
+        ret = subprocess.run(topdfcmd(link, pdf_path(i), feed_name + ': ' + title), capture_output=True)
         if ret.returncode != 0:
             print('ERROR:')
             print(ret.stdout.decode(errors='replace'))
@@ -229,7 +246,8 @@ def make_pdf(conn, args):
         joined_toc.extend(orig.getToC())
         orig.close()
 
-    for link, feed_name, title, pdf in articles:
+    for i, (link, feed_name, title) in enumerate(articles):
+        pdf = pdf_path(i)
         if os.path.isfile(pdf):
             inp_doc = fitz.open(pdf)
             joined_toc.append((1, feed_name + ': ' + title, joined.pageCount + 1))
@@ -267,6 +285,7 @@ if __name__ == '__main__':
 
     pdf_parser = subparsers.add_parser('pdf', help='Make a pdf file of articles')
     pdf_parser.add_argument('--no-append', action='store_true', help='By default if the output PDF exists new articles will be appended to the end. This forces a new document to be created and overwrite the exiting one')
+    pdf_parser.add_argument('--no-comments', action='store_true', help='Do not include comment links')
     pdf_parser.add_argument('--period', '-p', type=parse_period, default='1d', help='How long in the past to start listing articles from (default 1 day)')
     pdf_parser.add_argument('--keep', action='store_true', help='Do not delete temp folder')
     pdf_parser.add_argument('--wkhtmltopdf-path', help='Path to wkhtmltopdf binary')
