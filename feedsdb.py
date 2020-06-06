@@ -163,6 +163,16 @@ def list_feeds(conn, args):
     for name, url, prio in conn.execute('SELECT name, url, priority FROM feeds'):
         print('{}: {} ({})'.format(name, url, prio))
 
+class DefaultLink:
+    def __init__(self, link, title, feed_name, is_comments):
+        self.url = link
+        if is_comments:
+            feed_name += ' (comments)'
+        self.desc = '{} [{}] ({})'.format(title, feed_name, link)
+        self.toc_label = '{}: {}'.format(feed_name, title)
+        self.options = []
+        self.custom_css = None
+
 @with_db
 def make_pdf(conn, args):
     try:
@@ -171,6 +181,16 @@ def make_pdf(conn, args):
         print('Please install the pymupdf (fitz) module')
         raise
 
+    try:
+        import link_processor
+        process_link = link_processor.process_link
+    except ModuleNotFoundError:
+        print('**** No link_processor, using default')
+        def process_link(link, comments_link, title, feed_name):
+            yield DefaultLink(link, title, feed_name, False)
+            if comments_link:
+                yield DefaultLink(comments_link, title, feed_name, True)
+
     wkhtmltopdf = args.wkhtmltopdf_path
     if wkhtmltopdf is None:
         wkhtmltopdf = shutil.which('wkhtmltopdf')
@@ -178,14 +198,12 @@ def make_pdf(conn, args):
         print('Please install wkhtmltopdf or specify path to binary with --wkhtmltopdf-path')
         sys.exit(1)
 
-    def topdfcmd(url, pdf, title):
-        return [wkhtmltopdf,
-            '--grayscale', '--disable-javascript',
-            '--page-width', '6.2in', '--page-height', '8.26in', '--dpi', '226',
-            '--custom-header', 'User-Agent', 'Mozilla/5.0 (Windows NT 10.0; rv:68.0) Gecko/20100101 Firefox/68.0', '--custom-header-propagation',
-            '--margin-top', '2mm', '--margin-bottom', '2mm', '--margin-left', '2mm', '--margin-right', '2mm',
-            '--title', title,
-            url, pdf]
+    def topdfcmd(url, pdf, opts, user_css_file):
+        cmd = [wkhtmltopdf] + opts
+        if user_css_file is not None:
+            cmd += ['--user-style-sheet', user_css_file]
+        cmd += [url, pdf]
+        return cmd
 
     first_time = int(time.time()) - args.period
     articles = []
@@ -193,18 +211,18 @@ def make_pdf(conn, args):
     # Drop duplicate articles, I see quite a few duplicates from new aggregators
     # so this is useful. Can't see any downside?
     seen_links = set()
-    for link, title, feed_name, comments_link in conn.execute('SELECT link, title, items.feed, comments_link FROM items INNER JOIN feeds on items.feed = feeds.name WHERE pub_date >= ? ORDER BY pub_date DESC', (first_time,)):
-        if link not in seen_links:
-            articles.append((link, feed_name, title))
-            if comments_link and not args.no_comments:
-                articles.append((comments_link, '{} (comments)'.format(feed_name), title))
-            seen_links.add(link)
+    for link, title, feed_name, comments_link in conn.execute('SELECT link, title, items.feed, comments_link FROM items INNER JOIN feeds on items.feed = feeds.name WHERE pub_date >= ? ORDER BY feeds.priority ASC, feeds.name, pub_date DESC', (first_time,)):
+        print('Processing ' + link)
+        for new_link in process_link(link, comments_link, title, feed_name):
+            if new_link.url not in seen_links:
+                articles.append(new_link)
+                seen_links.add(new_link.url)
 
     if not args.non_interactive:
         with tempfile.NamedTemporaryFile(delete=False, mode='w') as f:
             filename = f.name
-            for i, (link, feed_name, title) in enumerate(articles):
-                f.write('{:04d} {} [{}] ({})\n'.format(i, title, feed_name, link))
+            for i, article in enumerate(articles):
+                f.write('{:04d} {}\n'.format(i, article.desc))
         ret = subprocess.run([os.getenv('EDITOR', 'vi'), filename])
         keep_set = set()
         if ret.returncode == 0:
@@ -226,12 +244,21 @@ def make_pdf(conn, args):
 
     temp_dir = tempfile.mkdtemp()
     print('Using temp folder: ' + temp_dir)
-    def pdf_path(n):
-        return os.path.join(temp_dir, '{:04d}.pdf'.format(n))
+    def temp_path(n, ext='pdf'):
+        return os.path.join(temp_dir, '{:04d}.{}'.format(n, ext))
 
-    for i, (link, feed_name, title) in enumerate(articles):
-        print('Downloading ({}/{}) {}'.format(i + 1, len(articles), link))
-        ret = subprocess.run(topdfcmd(link, pdf_path(i), feed_name + ': ' + title), capture_output=True)
+    for i, article in enumerate(articles):
+        print('Downloading ({}/{}) {}'.format(i + 1, len(articles), article.url))
+        # custom css is handled separately from other options as it needs to be
+        # written to a file
+        if article.custom_css:
+            user_css_file = temp_path(i, ext='css')
+            with open(user_css_file, 'w') as f:
+                f.write(article.custom_css)
+        else:
+            user_css_file = None
+
+        ret = subprocess.run(topdfcmd(article.url, temp_path(i), article.options, user_css_file), capture_output=True)
         if ret.returncode != 0:
             print('ERROR:')
             print(ret.stdout.decode(errors='replace'))
@@ -246,11 +273,12 @@ def make_pdf(conn, args):
         joined_toc.extend(orig.getToC())
         orig.close()
 
-    for i, (link, feed_name, title) in enumerate(articles):
-        pdf = pdf_path(i)
+    for i, article in enumerate(articles):
+        pdf = temp_path(i)
         if os.path.isfile(pdf):
             inp_doc = fitz.open(pdf)
-            joined_toc.append((1, feed_name + ': ' + title, joined.pageCount + 1))
+            if article.toc_label:
+                joined_toc.append((1, article.toc_label, joined.pageCount + 1))
             joined.insertPDF(inp_doc, annots=False)
             inp_doc.close()
     joined.setToC(joined_toc)
