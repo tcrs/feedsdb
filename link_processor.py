@@ -114,7 +114,8 @@ def process_link(link, comments_link, title, feed_name):
                 None,
                 _options(background=bg), css)
 
-    if comments_link:
+    # Don't read torrentfreak comments
+    if comments_link and 'torrentfreak' not in comments_link:
         yield Link(comments_link,
             _desc(comments_link, title, feed_name + ' (comments)'),
             _toc_label(comments_link, title, feed_name + ' (comments)'),
