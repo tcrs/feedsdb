@@ -22,7 +22,7 @@ def do_delete(conn, name):
     conn.execute('DELETE FROM feeds WHERE name = ?', (name,))
     conn.execute('DELETE FROM items WHERE feed = ?', (name,))
 
-def do_update(conn, force=False):
+def do_update(conn, force=False, verbose=False):
     # Some feeds don't have IDs on the entries, so just fall back to using the
     # link :s
     def entry_id(e):
@@ -36,6 +36,8 @@ def do_update(conn, force=False):
     else:
         cursor.execute('SELECT name, url, etag, modified FROM feeds WHERE last_update + poll_period < ?', (now,))
     for name, url, etag, modified in cursor:
+        if verbose:
+            print('{} ({})'.format(name, url))
         feed = feedparser.parse(url, etag=etag, modified=modified)
         conn.execute('UPDATE feeds SET last_update = ? WHERE name = ?', (now, name))
         if not feed.feed:
@@ -66,6 +68,8 @@ def with_db(fn):
                     icon TEXT,
                     etag TEXT, modified TEXT)''')
             conn.execute('''CREATE TABLE IF NOT EXISTS items (id text, feed text, title text, link text, comments_link text, pub_date INT, pub_day TEXT, PRIMARY KEY (feed, id))''')
+
+            conn.execute('''CREATE TABLE IF NOT EXISTS meta (key text PRIMARY KEY, value text)''')
 
             # Old version didn't have comments_link, check and add it if required
             try:
@@ -205,7 +209,21 @@ def make_pdf(conn, args):
         cmd += [url, pdf]
         return cmd
 
-    first_time = int(time.time()) - args.period
+    if args.update:
+        print('Updating feeds...')
+        do_update(conn, force=False, verbose=True)
+
+    start_time = int(time.time())
+    if args.period is not None:
+        first_time = start_time - args.period
+    else:
+        first_time = conn.execute('SELECT value FROM meta WHERE key = "last_pdf_time"').fetchone()
+        if first_time is None:
+            print('No PDF generated before - defaulting to last day of articles')
+            first_time = start_time - parse_period('1d')
+        else:
+            first_time = int(first_time[0])
+
     articles = []
 
     # Drop duplicate articles, I see quite a few duplicates from new aggregators
@@ -264,6 +282,10 @@ def make_pdf(conn, args):
             print(ret.stdout.decode(errors='replace'))
             print(ret.stderr.decode(errors='replace'))
 
+    if args.period is None:
+        conn.execute('INSERT OR REPLACE INTO meta (key, value) VALUES("last_pdf_time", ?)', (start_time,))
+        conn.commit()
+
     print('Merging...')
     joined = fitz.open()
     joined_toc = joined.getToC()
@@ -314,9 +336,10 @@ if __name__ == '__main__':
     pdf_parser = subparsers.add_parser('pdf', help='Make a pdf file of articles')
     pdf_parser.add_argument('--no-append', action='store_true', help='By default if the output PDF exists new articles will be appended to the end. This forces a new document to be created and overwrite the exiting one')
     pdf_parser.add_argument('--no-comments', action='store_true', help='Do not include comment links')
-    pdf_parser.add_argument('--period', '-p', type=parse_period, default='1d', help='How long in the past to start listing articles from (default 1 day)')
+    pdf_parser.add_argument('--period', '-p', type=parse_period, help='How long in the past to start listing articles from (default since last pdf generation)')
     pdf_parser.add_argument('--keep', action='store_true', help='Do not delete temp folder')
     pdf_parser.add_argument('--wkhtmltopdf-path', help='Path to wkhtmltopdf binary')
+    pdf_parser.add_argument('--update', action='store_true', help='Update feeds before generating PDF')
     pdf_parser.add_argument('-n', '--non-interactive', action='store_true', help='Do not launch an editor to interactively select which articles to download')
     pdf_parser.add_argument('output', help='Output PDF file')
     pdf_parser.set_defaults(func=make_pdf)
@@ -327,7 +350,7 @@ if __name__ == '__main__':
 
     update_parser = subparsers.add_parser('update', help='Update feeds')
     update_parser.add_argument('--force', action='store_true', help='Ignore poll period and update all feeds')
-    update_parser.set_defaults(func=with_db(lambda conn, args: do_update(conn, args.force)))
+    update_parser.set_defaults(func=with_db(lambda conn, args: do_update(conn, args.force, verbose=True)))
 
     args = parser.parse_args()
     args.func(args)
