@@ -119,3 +119,11 @@ def process_link(link, comments_link, title, feed_name):
             _desc(comments_link, title, feed_name + ' (comments)'),
             _toc_label(comments_link, title, feed_name + ' (comments)'),
             _options(), None)
+
+if __name__ == '__main__':
+    for url in sys.argv[1:]:
+        for link in process_link(url, '', '<title>', '<feed>'):
+            print(link.url)
+            print('desc: ' + link.desc)
+            if link.toc_label:
+                print('toc_label: ' + link.toc_label)
