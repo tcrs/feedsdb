@@ -106,11 +106,11 @@ def process_link(link, comments_link, title, feed_name):
 
     if re.match(r'https?://arstechnica[.]com/', link):
         # First page generated above
-        n = get_num_pages_ars(link)
-        for i in range(2, n+1):
-            page_link = link + str(n) + '/'
+        n_pages = get_num_pages_ars(link)
+        for i in range(2, n_pages+1):
+            page_link = link + str(i) + '/'
             yield Link(page_link,
-                _desc(page_link, title + ' (page {}/{})'.format(i, n), feed_name),
+                _desc(page_link, title + ' (page {}/{})'.format(i, n_pages), feed_name),
                 None,
                 _options(background=bg), css)
 
