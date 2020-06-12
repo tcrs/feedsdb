@@ -72,6 +72,12 @@ _ars_white_background = '''
 }
 '''
 
+_acoup_css = '''
+.comments-area {
+    display: none !important;
+}
+'''
+
 def process_link(link, comments_link, title, feed_name):
     Link = collections.namedtuple('Link', 'url desc toc_label options custom_css')
 
@@ -86,6 +92,9 @@ def process_link(link, comments_link, title, feed_name):
         # Ars images are all divs with a background image set!
         bg = True
         css = _ars_white_background
+
+    if 'acoup.blog' in link:
+        css = _acoup_css
 
     if re.match(r'https?://arstechnica[.]com/[?]p=[0-9]+', link):
         link = _resolve_redirect(link)
