@@ -61,6 +61,9 @@ _anandtech_full_width = '''
 	width: 100% !important;
 	font-size: 150% !important;
 }
+div.articleContent {
+    color: #000 !important;
+}
 '''
 
 _ars_white_background = '''
