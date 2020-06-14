@@ -23,12 +23,16 @@ for managing feeds from the command line.
 
 The CLI command `pdf` creates a PDF of (a subset of) the articles from a given
 amount of time before now. It uses
-[wkhtmltopdf](https://github.com/wkhtmltopdf/wkhtmltopdf) and
+[puppeteer](https://github.com/puppeteer/puppeteer/) and
 [pymupdf](https://github.com/pymupdf/PyMuPDF). Unless you specify
 `--non-interactive` an editor (change by setting the `EDITOR` env var) will pop
 up and you can delete any articles you don't want in the PDF.
 
-Each article is downloaded using `wkhtmltopdf` to a temporary file and then they
+To get puppeteer (assuming you have node and npm installed) you can run:
+
+   npm install puppeteer
+
+Each article is downloaded using puppeteer to a temporary file and then they
 are all stitched together using `pymupdf`. A ToC/Outline is added to the final
 PDF with an entry for each article to make it easy to jump to articles.
 
@@ -36,17 +40,14 @@ By default (disable with `--no-append`) if the output PDF file already exists
 the selected articles will be appended to it rather than overwriting the whole
 thing.
 
-Caveats:
+By default 5 articles will be downloaded in parallel. You can change this in
+`fetch_pdfs.js` - `maxConcurrent`.
 
- - The arguments to `wkhtmltopdf` are largely hardcoded at the moment to match
-   what I want for reading the result on my reMarkable ereader.
- - User Agent is hardcoded to what the version of Firefox I happened to be using
-   reported.
- - It's pretty slow. Could launch multiple `wkhtmltopdf` invocations in
-   parallel?
- - The version of `wkhtmltopdf` I am using (default on Arch linux) isn't built
-   with a patched version of Qt and seems to handle custom fonts by storing all
-   the text as vector images, which produces very large PDFs. On the other hand
-   using the static `wkhtmltopdf` build provided by the project I get segfaults
-   on some of the sites I like to read, but the fonts generally seem to be
-   handled properly. For now I'm just managing with very large PDFs.
+THe PDF generation calls into `link_processor.py` to get one or more dict of
+settings for each article. I've included my link processor as an example to work
+from, you can do pretty much anything here. `feedsdb.py` expects the dict to
+contain 'url' and 'desc' keys (desc is what's shown in the editor interface),
+and 'toc\_label' if you want the article to appear in the PDF ToC. All the rest
+of the arguments are passed through (via a JSON file) to `fetch_pdfs.js`, so
+have a look in there (and the puppeteer docs). Note: I am not a JavaScript
+programmer so `fetch_pdfs.js` is rather cobbled together, improvements welcome!

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import json
 import tempfile
 import subprocess
 import shutil
@@ -167,16 +168,6 @@ def list_feeds(conn, args):
     for name, url, prio in conn.execute('SELECT name, url, priority FROM feeds'):
         print('{}: {} ({})'.format(name, url, prio))
 
-class DefaultLink:
-    def __init__(self, link, title, feed_name, is_comments):
-        self.url = link
-        if is_comments:
-            feed_name += ' (comments)'
-        self.desc = '{} [{}] ({})'.format(title, feed_name, link)
-        self.toc_label = '{}: {}'.format(feed_name, title)
-        self.options = []
-        self.custom_css = None
-
 @with_db
 def make_pdf(conn, args):
     try:
@@ -191,23 +182,14 @@ def make_pdf(conn, args):
     except ModuleNotFoundError:
         print('**** No link_processor, using default')
         def process_link(link, comments_link, title, feed_name):
-            yield DefaultLink(link, title, feed_name, False)
+            yield dict(url = link,
+                desc = '{}: {}'.format(feed_name, title),
+                toc_label = title)
+
             if comments_link:
-                yield DefaultLink(comments_link, title, feed_name, True)
-
-    wkhtmltopdf = args.wkhtmltopdf_path
-    if wkhtmltopdf is None:
-        wkhtmltopdf = shutil.which('wkhtmltopdf')
-    if wkhtmltopdf is None:
-        print('Please install wkhtmltopdf or specify path to binary with --wkhtmltopdf-path')
-        sys.exit(1)
-
-    def topdfcmd(url, pdf, opts, user_css_file):
-        cmd = [wkhtmltopdf] + opts
-        if user_css_file is not None:
-            cmd += ['--user-style-sheet', user_css_file]
-        cmd += [url, pdf]
-        return cmd
+                yield dict(url = comments_link,
+                    desc = '{} (comments): {}'.format(feed_name, title),
+                    toc_label = title)
 
     if args.update:
         print('Updating feeds...')
@@ -232,15 +214,15 @@ def make_pdf(conn, args):
     for link, title, feed_name, comments_link in conn.execute('SELECT link, title, items.feed, comments_link FROM items INNER JOIN feeds on items.feed = feeds.name WHERE pub_date >= ? ORDER BY feeds.priority ASC, feeds.name, pub_date DESC', (first_time,)):
         print('Processing ' + link)
         for new_link in process_link(link, comments_link, title, feed_name):
-            if new_link.url not in seen_links:
+            if new_link['url'] not in seen_links:
                 articles.append(new_link)
-                seen_links.add(new_link.url)
+                seen_links.add(new_link['url'])
 
     if not args.non_interactive:
         with tempfile.NamedTemporaryFile(delete=False, mode='w') as f:
             filename = f.name
             for i, article in enumerate(articles):
-                f.write('{:04d} {}\n'.format(i, article.desc))
+                f.write('{:04d} {}\n'.format(i, article['desc']))
         ret = subprocess.run([os.getenv('EDITOR', 'vi'), filename])
         keep_set = set()
         if ret.returncode == 0:
@@ -265,22 +247,19 @@ def make_pdf(conn, args):
     def temp_path(n, ext='pdf'):
         return os.path.join(temp_dir, '{:04d}.{}'.format(n, ext))
 
+    all_opts = []
     for i, article in enumerate(articles):
-        print('Downloading ({}/{}) {}'.format(i + 1, len(articles), article.url))
-        # custom css is handled separately from other options as it needs to be
-        # written to a file
-        if article.custom_css:
-            user_css_file = temp_path(i, ext='css')
-            with open(user_css_file, 'w') as f:
-                f.write(article.custom_css)
-        else:
-            user_css_file = None
+        opts = article.copy()
+        opts.update(path = temp_path(i))
+        opts.pop('desc', None)
+        opts.pop('toc_label', None)
+        all_opts.append(opts)
 
-        ret = subprocess.run(topdfcmd(article.url, temp_path(i), article.options, user_css_file), capture_output=True)
-        if ret.returncode != 0:
-            print('ERROR:')
-            print(ret.stdout.decode(errors='replace'))
-            print(ret.stderr.decode(errors='replace'))
+    fetch_json = os.path.join(temp_dir, 'fetch.json')
+    with open(fetch_json, 'w') as f:
+        json.dump(all_opts, f)
+
+    subprocess.run(['node', 'fetch_pdfs.js', fetch_json], check=True)
 
     if args.period is None:
         conn.execute('INSERT OR REPLACE INTO meta (key, value) VALUES("last_pdf_time", ?)', (start_time,))
@@ -299,10 +278,12 @@ def make_pdf(conn, args):
         pdf = temp_path(i)
         if os.path.isfile(pdf):
             inp_doc = fitz.open(pdf)
-            if article.toc_label:
-                joined_toc.append((1, article.toc_label, joined.pageCount + 1))
+            if article.get('toc_label', None):
+                joined_toc.append((1, article['toc_label'], joined.pageCount + 1))
             joined.insertPDF(inp_doc, annots=False)
             inp_doc.close()
+        else:
+            print('WARNING: PDF not found for {}'.format(article['url']))
     joined.setToC(joined_toc)
     joined.save(args.output, garbage=4, clean=True, deflate=True, incremental=False)
 

@@ -2,24 +2,65 @@ import re
 import sys
 import requests
 import requests.exceptions
-import collections
 import bs4
 
-_headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; rv:68.0) Gecko/20100101 Firefox/68.0'
+# page size in millimeters
+_page_size = (156, 208)
+
+def _mmtopx(mm):
+    # 96dpi, 1 inch = 25.4mm
+    return int(96 * (mm / 25.4))
+
+_default_opts = dict(
+    width = '{}mm'.format(_page_size[0]), height = '{}mm'.format(_page_size[1]),
+    viewport = dict(width = _mmtopx(_page_size[0]), height = _mmtopx(_page_size[1])),
+    useragent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.97 Safari/537.36',
+    mediafeatures = [
+        dict(name = 'prefers-color-scheme', value = 'light'),
+        dict(name = 'prefers-reduced-motion', value = 'reduce')
+    ])
+
+_anandtech_css = '''
+.main_cont {
+    width: 100% !important;
 }
+div.articleContent {
+    color: #000 !important;
+}
+'''
 
-_default_opts = [
-    '--grayscale', '--disable-javascript',
-    '--page-width', '6.2in', '--page-height', '8.26in', '--dpi', '226',
-    '--minimum-font-size', '16',
-    '--load-error-handling', 'ignore',
-    '--custom-header', 'User-Agent', _headers['User-Agent'],
-    '--margin-top', '2mm', '--margin-bottom', '2mm', '--margin-left', '2mm', '--margin-right', '2mm']
+_ars_css = '''
+.site-wrapper {
+    background-color: white !important;
+}
+'''
 
-def _options(background=False):
-    return _default_opts \
-        + ['--{}background'.format('' if background else 'no-')]
+_acoup_css = '''
+.comments-area {
+    display: none !important;
+}
+'''
+
+def _options(url):
+    opts = _default_opts.copy()
+
+    if 'anandtech.com' in url:
+        opts.update(css = _anandtech_css)
+        opts.update(mediatype = 'screen')
+
+    if 'arstechnica.com' in url:
+        # Ars images are all divs with a background image set!
+        opts.update(printBackground = True)
+        opts.update(css = _ars_css)
+
+    if 'acoup.blog' in url:
+        opts.update(css = _acoup_css)
+
+    return opts
+
+_headers = {
+    'User-Agent': _default_opts['useragent']
+}
 
 def _resolve_redirect(link):
     try:
@@ -56,75 +97,34 @@ def _desc(link, title, feed_name):
 def _toc_label(link, title, feed_name):
     return '{}: {}'.format(feed_name, title)
 
-_anandtech_full_width = '''
-.main_cont {
-	width: 100% !important;
-	font-size: 150% !important;
-}
-div.articleContent {
-    color: #000 !important;
-}
-'''
-
-_ars_white_background = '''
-.site-wrapper {
-    background-color: white !important;
-}
-'''
-
-_acoup_css = '''
-.comments-area {
-    display: none !important;
-}
-'''
-
 def process_link(link, comments_link, title, feed_name):
-    Link = collections.namedtuple('Link', 'url desc toc_label options custom_css')
-
-    bg = False
-    css = None
-
-    if 'anandtech' in link:
-        css = _anandtech_full_width
     link = re.sub('anandtech.com/show/', 'anandtech.com/print/', link)
-
-    if 'arstechnica' in link:
-        # Ars images are all divs with a background image set!
-        bg = True
-        css = _ars_white_background
-
-    if 'acoup.blog' in link:
-        css = _acoup_css
 
     if re.match(r'https?://arstechnica[.]com/[?]p=[0-9]+', link):
         link = _resolve_redirect(link)
 
-    yield Link(link,
-        _desc(link, title, feed_name),
-        _toc_label(link, title, feed_name),
-        _options(background=bg), css)
+    yield dict(url = link,
+        desc = _desc(link, title, feed_name),
+        toc_label = _toc_label(link, title, feed_name),
+        **_options(link))
 
     if re.match(r'https?://arstechnica[.]com/', link):
         # First page generated above
         n_pages = get_num_pages_ars(link)
         for i in range(2, n_pages+1):
             page_link = link + str(i) + '/'
-            yield Link(page_link,
-                _desc(page_link, title + ' (page {}/{})'.format(i, n_pages), feed_name),
-                None,
-                _options(background=bg), css)
+            yield dict(url = page_link,
+                desc = _desc(page_link, title + ' (page {}/{})'.format(i, n_pages), feed_name),
+                **_options(page_link))
 
     # Don't read torrentfreak comments
     if comments_link and 'torrentfreak' not in comments_link:
-        yield Link(comments_link,
-            _desc(comments_link, title, feed_name + ' (comments)'),
-            _toc_label(comments_link, title, feed_name + ' (comments)'),
-            _options(), None)
+        yield dict(url = comments_link,
+            desc = _desc(comments_link, title, feed_name + ' (comments)'),
+            toc_label = _toc_label(comments_link, title, feed_name + ' (comments)'),
+            **_options(comments_link))
 
 if __name__ == '__main__':
     for url in sys.argv[1:]:
         for link in process_link(url, '', '<title>', '<feed>'):
-            print(link.url)
-            print('desc: ' + link.desc)
-            if link.toc_label:
-                print('toc_label: ' + link.toc_label)
+            print(str(link))
