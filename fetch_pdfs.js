@@ -2,6 +2,7 @@ const puppeteer = require('puppeteer');
 const fs = require('fs');
 
 const maxConcurrent = 5;
+const maxRetries = 3;
 
 const path = process.argv[2];
 
@@ -30,7 +31,23 @@ async function getPdf(browser, spec) {
 		delete spec.viewport;
 	}
 
-	await page.goto(url, {waitUntil: 'networkidle0'});
+	var tries = 0;
+	while (true) {
+		try {
+			await page.goto(url, {waitUntil: 'networkidle0'});
+			break;
+		}
+		catch (e) {
+			tries += 1;
+			if (tries > maxRetries) {
+				throw e;
+			}
+			else {
+				console.log("Retry: ", url);
+			}
+		}
+	}
+
 	if ('css' in spec) {
 		// page.addStyleTag will hang if the page has javascript disabled
 		// It works by injecting a script similar to that below, but with a
