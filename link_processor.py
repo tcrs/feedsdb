@@ -33,10 +33,19 @@ _ars_css = '''
 .site-wrapper {
     background-color: white !important;
 }
+.ad.ad.ad, footer, #article-footer-wrap {
+    display: none !important;
+}
 '''
 
 _acoup_css = '''
 .comments-area {
+    display: none !important;
+}
+'''
+
+_torrentfreak_css = '''
+footer, aside, .page__sidebar {
     display: none !important;
 }
 '''
@@ -47,14 +56,17 @@ def _options(url):
     if 'anandtech.com' in url:
         opts.update(css = _anandtech_css)
         opts.update(mediatype = 'screen')
-
-    if 'arstechnica.com' in url:
+    elif 'arstechnica.com' in url:
         # Ars images are all divs with a background image set!
         opts.update(printBackground = True)
         opts.update(css = _ars_css)
-
-    if 'acoup.blog' in url:
+    elif 'acoup.blog' in url:
         opts.update(css = _acoup_css)
+    elif 'torrentfreak.com' in url:
+        opts.update(css = _torrentfreak_css)
+    else:
+        # Kill sticky headers etc by default on sites not explictly handled
+        opts.update(kill_sticky = True)
 
     return opts
 
