@@ -64,6 +64,23 @@ async function getPdf(browser, spec) {
 		delete spec.css;
 	}
 
+	if ('kill_sticky' in spec) {
+		// Kill Sticky headers code from here:
+		// https://alisdair.mcdiarmid.org/kill-sticky-headers/
+		if (spec.kill_sticky) {
+			await page.evaluate(() => {
+				var i, elements = document.querySelectorAll('body *');
+
+				for (i = 0; i < elements.length; i++) {
+					if (getComputedStyle(elements[i]).position === 'fixed') {
+						elements[i].parentNode.removeChild(elements[i]);
+					}
+				}
+			});
+		}
+		delete spec.kill_sticky;
+	}
+
 	if ('mediafeatures' in spec) {
 		await page.emulateMediaFeatures(spec.mediafeatures);
 		delete spec.mediafeatures;
