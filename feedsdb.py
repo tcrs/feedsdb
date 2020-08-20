@@ -256,10 +256,12 @@ def make_pdf(conn, args):
         url = spec.pop('url')
         print("Starting: " + url)
 
-        try:
-            await page.goto(url, waitUntil='networkidle')
-        except Exception as e:
-            print('Fail: {}: {}'.format(url, e))
+        for i in range(3):
+            try:
+                await page.goto(url, waitUntil='networkidle')
+                break
+            except Exception as e:
+                print('Fail: {}: {}'.format(url, e))
 
         await pdf_from_page(page, spec)
         print('Done: ' + url)
@@ -343,7 +345,7 @@ def make_pdf(conn, args):
         opts.pop('toc_label', None)
         all_opts.append(opts)
 
-    asyncio.get_event_loop().run_until_complete(get_all_pdfs(all_opts, 3))
+    asyncio.get_event_loop().run_until_complete(get_all_pdfs(all_opts, args.parallel))
 
     if args.period is None:
         conn.execute('INSERT OR REPLACE INTO meta (key, value) VALUES("last_pdf_time", ?)', (start_time,))
@@ -403,9 +405,9 @@ if __name__ == '__main__':
     pdf_parser.add_argument('--no-comments', action='store_true', help='Do not include comment links')
     pdf_parser.add_argument('--period', '-p', type=parse_period, help='How long in the past to start listing articles from (default since last pdf generation)')
     pdf_parser.add_argument('--keep', action='store_true', help='Do not delete temp folder')
-    pdf_parser.add_argument('--wkhtmltopdf-path', help='Path to wkhtmltopdf binary')
     pdf_parser.add_argument('--update', action='store_true', help='Update feeds before generating PDF')
     pdf_parser.add_argument('-n', '--non-interactive', action='store_true', help='Do not launch an editor to interactively select which articles to download')
+    pdf_parser.add_argument('-j', '--parallel', type=int, default=5, help='Maximum number of pages to load in parallel')
     pdf_parser.add_argument('output', help='Output PDF file')
     pdf_parser.set_defaults(func=make_pdf)
 
