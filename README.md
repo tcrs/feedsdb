@@ -23,16 +23,17 @@ for managing feeds from the command line.
 
 The CLI command `pdf` creates a PDF of (a subset of) the articles from a given
 amount of time before now. It uses
-[puppeteer](https://github.com/puppeteer/puppeteer/) and
+[playwright](https://github.com/microsoft/playwright-python) and
 [pymupdf](https://github.com/pymupdf/PyMuPDF). Unless you specify
 `--non-interactive` an editor (change by setting the `EDITOR` env var) will pop
 up and you can delete any articles you don't want in the PDF.
 
-To get puppeteer (assuming you have node and npm installed) you can run:
+To get `python-playwright` you can do:
 
-   npm install puppeteer
+   pip install playwright # install playwright-python
+   python -m playwright install # download browsers
 
-Each article is downloaded using puppeteer to a temporary file and then they
+Each article is downloaded using playwright to a temporary file and then they
 are all stitched together using `pymupdf`. A ToC/Outline is added to the final
 PDF with an entry for each article to make it easy to jump to articles.
 
@@ -40,14 +41,8 @@ By default (disable with `--no-append`) if the output PDF file already exists
 the selected articles will be appended to it rather than overwriting the whole
 thing.
 
-By default 5 articles will be downloaded in parallel. You can change this in
-`fetch_pdfs.js` - `maxConcurrent`.
-
 THe PDF generation calls into `link_processor.py` to get one or more dict of
 settings for each article. I've included my link processor as an example to work
 from, you can do pretty much anything here. `feedsdb.py` expects the dict to
 contain 'url' and 'desc' keys (desc is what's shown in the editor interface),
-and 'toc\_label' if you want the article to appear in the PDF ToC. All the rest
-of the arguments are passed through (via a JSON file) to `fetch_pdfs.js`, so
-have a look in there (and the puppeteer docs). Note: I am not a JavaScript
-programmer so `fetch_pdfs.js` is rather cobbled together, improvements welcome!
+and 'toc\_label' if you want the article to appear in the PDF ToC.

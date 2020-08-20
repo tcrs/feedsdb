@@ -14,11 +14,7 @@ def _mmtopx(mm):
 _default_opts = dict(
     width = '{}mm'.format(_page_size[0]), height = '{}mm'.format(_page_size[1]),
     viewport = dict(width = _mmtopx(_page_size[0]), height = _mmtopx(_page_size[1])),
-    useragent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.97 Safari/537.36',
-    mediafeatures = [
-        dict(name = 'prefers-color-scheme', value = 'light'),
-        dict(name = 'prefers-reduced-motion', value = 'reduce')
-    ])
+    useragent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.97 Safari/537.36')
 
 _anandtech_css = '''
 .main_cont {

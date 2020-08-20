@@ -170,10 +170,18 @@ def list_feeds(conn, args):
 
 @with_db
 def make_pdf(conn, args):
+    import asyncio
+
     try:
         import fitz
     except ModuleNotFoundError:
         print('Please install the pymupdf (fitz) module')
+        raise
+
+    try:
+        from playwright import async_playwright
+    except ModuleNotFoundError:
+        print('Please install python-playwright')
         raise
 
     try:
@@ -190,6 +198,86 @@ def make_pdf(conn, args):
                 yield dict(url = comments_link,
                     desc = '{} (comments): {}'.format(feed_name, title),
                     toc_label = title)
+
+    async def pdf_from_page(page, spec):
+        css = spec.pop('css', None)
+        if css is not None:
+            # page.addStyleTag will hang if the page has javascript disabled
+            # It works by injecting a script similar to that below, but with a
+            # promise that resolves on the style.onload callback - this never gets
+            # called if javascript is disabled.
+            # Here I'm assuming that the act of printing the PDF will make chromium
+            # do a full relayout and so the injected style will take effect :s
+            await page.evaluate('''content => {
+                const style = document.createElement('style');
+                style.type = 'text/css';
+                style.appendChild(document.createTextNode(content));
+                document.head.appendChild(style);
+            }''', css)
+
+        if spec.pop('kill_sticky', False):
+            # Kill Sticky headers code from here:
+            # https://alisdair.mcdiarmid.org/kill-sticky-headers/
+            await page.evaluate('''() => {
+                var i, elements = document.querySelectorAll('body *');
+
+                for (i = 0; i < elements.length; i++) {
+                    if (getComputedStyle(elements[i]).position === 'fixed') {
+                        elements[i].parentNode.removeChild(elements[i]);
+                    }
+                }
+            }''')
+
+        mediatype = spec.pop('mediatype', None)
+        if mediatype is not None:
+            await page.emulateMedia(media = mediatype)
+
+        await page.pdf(**spec)
+
+    async def get_pdf(browser, spec):
+        context_opts = dict(
+            acceptDownloads = True,
+            javaScriptEnabled = False,
+            colorScheme = 'light'
+        )
+
+        if 'useragent' in spec:
+            context_opts['userAgent'] = spec.pop('useragent')
+        if 'viewport' in spec:
+            context_opts['viewport'] = spec.pop('viewport')
+
+        context = await browser.newContext(**context_opts)
+
+        page = await context.newPage()
+
+        # Default 2 minute nav timeout
+        page.setDefaultNavigationTimeout(2 * 60 * 1000)
+
+        url = spec.pop('url')
+        print("Starting: " + url)
+
+        try:
+            await page.goto(url, waitUntil='networkidle')
+        except Exception as e:
+            print('Fail: {}: {}'.format(url, e))
+
+        await pdf_from_page(page, spec)
+        print('Done: ' + url)
+
+    async def get_all_pdfs(specs, max_concurrent):
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            running = set()
+            for spec in specs:
+                if len(running) >= max_concurrent:
+                    done, running = await asyncio.wait(running, return_when=asyncio.FIRST_COMPLETED)
+                    for t in done:
+                        if t.exception():
+                            print('Error: {}'.format(t.exception()))
+                running.add(asyncio.create_task(get_pdf(browser, spec)))
+
+            await asyncio.wait(running)
+            await browser.close()
 
     if args.update:
         print('Updating feeds...')
@@ -211,7 +299,7 @@ def make_pdf(conn, args):
     # Drop duplicate articles, I see quite a few duplicates from new aggregators
     # so this is useful. Can't see any downside?
     seen_links = set()
-    for link, title, feed_name, comments_link in conn.execute('SELECT link, title, items.feed, comments_link FROM items INNER JOIN feeds on items.feed = feeds.name WHERE pub_date >= ? ORDER BY feeds.priority ASC, feeds.name, pub_date DESC', (first_time,)):
+    for link, title, feed_name, comments_link in conn.execute('SELECT link, title, items.feed, comments_link FROM items INNER JOIN feeds on items.feed = feeds.name WHERE pub_date >= ? ORDER BY feeds.priority ASC, feeds.name ASC, pub_date ASC', (first_time,)):
         print('Processing ' + link)
         for new_link in process_link(link, comments_link, title, feed_name):
             if new_link['url'] not in seen_links:
@@ -255,11 +343,7 @@ def make_pdf(conn, args):
         opts.pop('toc_label', None)
         all_opts.append(opts)
 
-    fetch_json = os.path.join(temp_dir, 'fetch.json')
-    with open(fetch_json, 'w') as f:
-        json.dump(all_opts, f)
-
-    subprocess.run(['node', 'fetch_pdfs.js', fetch_json], check=True)
+    asyncio.get_event_loop().run_until_complete(get_all_pdfs(all_opts, 3))
 
     if args.period is None:
         conn.execute('INSERT OR REPLACE INTO meta (key, value) VALUES("last_pdf_time", ?)', (start_time,))
