@@ -41,7 +41,7 @@ By default (disable with `--no-append`) if the output PDF file already exists
 the selected articles will be appended to it rather than overwriting the whole
 thing.
 
-THe PDF generation calls into `link_processor.py` to get one or more dict of
+The PDF generation calls into `link_processor.py` to get one or more dict of
 settings for each article. I've included my link processor as an example to work
 from, you can do pretty much anything here. `feedsdb.py` expects the dict to
 contain 'url' and 'desc' keys (desc is what's shown in the editor interface),
