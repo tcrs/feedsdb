@@ -300,10 +300,15 @@ def make_pdf(conn, args):
 
     articles = []
 
+    if args.url:
+        article_iter = [(url, 'command line', 'none', None) for url in args.url]
+    else:
+        article_iter = conn.execute('SELECT link, title, items.feed, comments_link FROM items INNER JOIN feeds on items.feed = feeds.name WHERE pub_date >= ? ORDER BY feeds.priority ASC, feeds.name ASC, pub_date ASC', (first_time,))
+
     # Drop duplicate articles, I see quite a few duplicates from new aggregators
     # so this is useful. Can't see any downside?
     seen_links = set()
-    for link, title, feed_name, comments_link in conn.execute('SELECT link, title, items.feed, comments_link FROM items INNER JOIN feeds on items.feed = feeds.name WHERE pub_date >= ? ORDER BY feeds.priority ASC, feeds.name ASC, pub_date ASC', (first_time,)):
+    for link, title, feed_name, comments_link in article_iter:
         print('Processing ' + link)
         for new_link in process_link(link, comments_link, title, feed_name):
             if new_link['url'] not in seen_links:
@@ -349,7 +354,7 @@ def make_pdf(conn, args):
 
     asyncio.get_event_loop().run_until_complete(get_all_pdfs(all_opts, args.parallel))
 
-    if args.period is None:
+    if args.period is None and not args.url:
         conn.execute('INSERT OR REPLACE INTO meta (key, value) VALUES("last_pdf_time", ?)', (start_time,))
         conn.commit()
 
@@ -403,6 +408,7 @@ if __name__ == '__main__':
     list_parser.set_defaults(func=list_feeds)
 
     pdf_parser = subparsers.add_parser('pdf', help='Make a pdf file of articles')
+    pdf_parser.add_argument('--url', action='append', default=[], help='For testing. Create a PDF using just the given URLs as if they were feed entries.')
     pdf_parser.add_argument('--no-append', action='store_true', help='By default if the output PDF exists new articles will be appended to the end. This forces a new document to be created and overwrite the exiting one')
     pdf_parser.add_argument('--no-comments', action='store_true', help='Do not include comment links')
     pdf_parser.add_argument('--period', '-p', type=parse_period, help='How long in the past to start listing articles from (default since last pdf generation)')
