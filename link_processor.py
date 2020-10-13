@@ -83,7 +83,11 @@ def _resolve_redirect(link):
         return link
 
 def get_num_pages_ars(link):
-    r = requests.get(link, headers=_headers)
+    for i in range(4):
+        r = requests.get(link, headers=_headers)
+        if r.status_code not in {500, 502, 503, 504}:
+            break
+
     page = bs4.BeautifulSoup(r.text, 'html.parser')
     num_pages = 1
     page_links = page.body.find('nav', class_ = 'page-numbers')
