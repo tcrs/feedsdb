@@ -232,6 +232,8 @@ def make_pdf(conn, args):
         if mediatype is not None:
             await page.emulateMedia(media = mediatype)
 
+        await page.waitForTimeout(500)
+
         await page.pdf(**spec)
 
     async def get_pdf(browser, spec):
