@@ -90,7 +90,13 @@ def get_num_pages_ars(link):
 
     page = bs4.BeautifulSoup(r.text, 'html.parser')
     num_pages = 1
-    page_links = page.body.find('nav', class_ = 'page-numbers')
+    page_links = None
+    # For some reason page.find('nav', class_='page-numbers') doesn't seem to
+    # always work. Not sure why...
+    for x in page.find_all('nav'):
+        if 'page-numbers' in x.attrs.get('class', []):
+            page_links = x
+
     if page_links:
         for page_link in page_links.find_all('a'):
             if page_link.string is not None:
