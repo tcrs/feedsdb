@@ -51,7 +51,7 @@ def do_update(conn, force=False, verbose=False):
             dt = getattr(entry, 'published_parsed', getattr(entry, 'updated_parsed'))
             day = time.strftime('%Y-%m-%d', dt)
             timestamp = calendar.timegm(dt)
-            conn.execute('INSERT OR REPLACE INTO items (feed, id, title, link, comments_link, pub_date, pub_day) VALUES(?, ?, ?, ?, ?, ?, ?)',
+            conn.execute('INSERT INTO items (feed, id, title, link, comments_link, pub_date, pub_day, seen) VALUES(?, ?, ?, ?, ?, ?, ?, 0) ON CONFLICT(feed, id) DO UPDATE SET title = excluded.title, link = excluded.link, comments_link = excluded.comments_link',
                 (name, entry_id(entry), entry.title, entry.link, getattr(entry, 'comments', ''), timestamp, day))
         conn.commit()
     conn.execute('''DELETE FROM items WHERE rowid IN (
@@ -68,15 +68,21 @@ def with_db(fn):
                     last_update INT, poll_period INT, prune_period INT, updated INT,
                     icon TEXT,
                     etag TEXT, modified TEXT)''')
-            conn.execute('''CREATE TABLE IF NOT EXISTS items (id text, feed text, title text, link text, comments_link text, pub_date INT, pub_day TEXT, PRIMARY KEY (feed, id))''')
-
-            conn.execute('''CREATE TABLE IF NOT EXISTS meta (key text PRIMARY KEY, value text)''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS items (id text, feed text, title text, link text, comments_link text,
+                    pub_date INT, pub_day TEXT, seen BOOLEAN DEFAULT 0, PRIMARY KEY (feed, id))''')
 
             # Old version didn't have comments_link, check and add it if required
             try:
                 conn.execute('''SELECT comments_link FROM items LIMIT 1''')
             except sqlite3.OperationalError:
                 conn.execute('''ALTER TABLE items ADD COLUMN comments_link text''')
+            conn.commit()
+
+            # Old versions didn't have seen, add if required
+            try:
+                conn.execute('''SELECT seen FROM items LIMIT 1''')
+            except sqlite3.OperationalError:
+                conn.execute('''ALTER TABLE items ADD COLUMN seen BOOLEAN''')
             conn.commit()
 
             fn(conn, cmd_args, *args, **kwargs)
@@ -283,59 +289,63 @@ def make_pdf(conn, args):
             await asyncio.wait(running)
             await browser.close()
 
+    def mark_seen(to_mark):
+        for article in to_mark:
+            conn.execute('UPDATE items SET seen = 1 WHERE feed = ? AND id = ?',
+                (article['feed'], article['id']))
+        conn.commit()
+
     if args.update:
         print('Updating feeds...')
         do_update(conn, force=False, verbose=True)
 
-    start_time = int(time.time())
-    if args.period is not None:
-        first_time = start_time - args.period
-    else:
-        first_time = conn.execute('SELECT value FROM meta WHERE key = "last_pdf_time"').fetchone()
-        if first_time is None:
-            print('No PDF generated before - defaulting to last day of articles')
-            first_time = start_time - parse_period('1d')
-        else:
-            first_time = int(first_time[0])
-
-    articles = []
-
     if args.url:
-        article_iter = [(url, 'command line', 'none', None) for url in args.url]
+        article_iter = [('none', url, 'command line', 'none', None) for url in args.url]
+    elif args.period:
+        article_iter = conn.execute('SELECT id, link, title, items.feed, comments_link FROM items INNER JOIN feeds on items.feed = feeds.name WHERE pub_date >= ? ORDER BY feeds.priority ASC, feeds.name ASC, pub_date ASC', (int(time.time()) - args.period,))
     else:
-        article_iter = conn.execute('SELECT link, title, items.feed, comments_link FROM items INNER JOIN feeds on items.feed = feeds.name WHERE pub_date >= ? ORDER BY feeds.priority ASC, feeds.name ASC, pub_date ASC', (first_time,))
+        article_iter = conn.execute('SELECT id, link, title, items.feed, comments_link FROM items INNER JOIN feeds on items.feed = feeds.name WHERE seen != 1 OR seen IS NULL ORDER BY feeds.priority ASC, feeds.name ASC, pub_date ASC')
 
+    orig_articles = []
     # Drop duplicate articles, I see quite a few duplicates from new aggregators
     # so this is useful. Can't see any downside?
     seen_links = set()
-    for link, title, feed_name, comments_link in article_iter:
+    for item_id, link, title, feed_name, comments_link in article_iter:
         print('Processing ' + link)
         for new_link in process_link(link, comments_link, title, feed_name):
             if new_link['url'] not in seen_links:
-                articles.append(new_link)
+                new_link.update(id = item_id, feed = feed_name)
+                orig_articles.append(new_link)
                 seen_links.add(new_link['url'])
 
     if not args.non_interactive:
         with tempfile.NamedTemporaryFile(delete=False, mode='w') as f:
             filename = f.name
-            for i, article in enumerate(articles):
-                f.write('{:04d} {}\n'.format(i, article['desc']))
+            for i, article in enumerate(orig_articles):
+                f.write('{:04d} pick {}\n'.format(i, article['desc']))
         ret = subprocess.run([os.getenv('EDITOR', 'vi'), filename])
-        keep_set = set()
+        cmd_map = {}
         if ret.returncode == 0:
             with open(filename, 'r') as f:
                 for line in f:
-                    s = line.split(' ', 1)
+                    s, cmd, _ = line.split(' ', 2)
                     try:
-                        keep_set.add(int(s[0]))
+                        cmd_map[int(s)] = cmd
                     except ValueError:
                         pass
         os.unlink(filename)
 
-        articles = [x for i, x in enumerate(articles)
-            if i in keep_set]
+        articles = [x for i, x in enumerate(orig_articles)
+            if cmd_map.get(i, None) in {'pick', 'p'}]
+
+        seen_articles = [x for i, x in enumerate(orig_articles)
+            if cmd_map.get(i, None) not in {'k', 'keep'}]
+    else:
+        articles = orig_articles
+        seen_articles = orig_articles
 
     if not articles:
+        mark_seen(seen_articles)
         print('No articles to download')
         sys.exit(2)
 
@@ -350,13 +360,11 @@ def make_pdf(conn, args):
         opts.update(path = temp_path(i))
         opts.pop('desc', None)
         opts.pop('toc_label', None)
+        opts.pop('feed', None)
+        opts.pop('id', None)
         all_opts.append(opts)
 
     asyncio.get_event_loop().run_until_complete(get_all_pdfs(all_opts, args.parallel))
-
-    if args.period is None and not args.url:
-        conn.execute('INSERT OR REPLACE INTO meta (key, value) VALUES("last_pdf_time", ?)', (start_time,))
-        conn.commit()
 
     print('Merging...')
     joined = fitz.open()
@@ -379,6 +387,8 @@ def make_pdf(conn, args):
             print('WARNING: PDF not found for {}'.format(article['url']))
     joined.setToC(joined_toc)
     joined.save(args.output, garbage=4, clean=True, deflate=True, incremental=False)
+
+    mark_seen(seen_articles)
 
     if not args.keep:
         print('Deleting temp folder')
