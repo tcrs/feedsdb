@@ -321,6 +321,10 @@ def make_pdf(conn, args):
     if not args.non_interactive:
         with tempfile.NamedTemporaryFile(delete=False, mode='w') as f:
             filename = f.name
+            f.write('# pick articles will be added to the PDF and marked as seen\n')
+            f.write('# deleted articles will not be added to the PDF but will be marked as seen\n')
+            f.write('# change pick to keep to not add the article to the PDF but not to mark it as seen\n')
+            f.write('# lines starting with # will be ignored\n')
             for i, article in enumerate(orig_articles):
                 f.write('{:04d} pick {}\n'.format(i, article['desc']))
         ret = subprocess.run([os.getenv('EDITOR', 'vi'), filename])
@@ -328,6 +332,8 @@ def make_pdf(conn, args):
         if ret.returncode == 0:
             with open(filename, 'r') as f:
                 for line in f:
+                    if line.startswith('#'):
+                        continue
                     s, cmd, _ = line.split(' ', 2)
                     try:
                         cmd_map[int(s)] = cmd
