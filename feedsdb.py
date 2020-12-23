@@ -179,9 +179,9 @@ def make_pdf(conn, args):
     import asyncio
 
     try:
-        import fitz
+        import pikepdf
     except ModuleNotFoundError:
-        print('Please install the pymupdf (fitz) module')
+        print('Please install the pikepdf module')
         raise
 
     try:
@@ -373,26 +373,24 @@ def make_pdf(conn, args):
     asyncio.get_event_loop().run_until_complete(get_all_pdfs(all_opts, args.parallel))
 
     print('Merging...')
-    joined = fitz.open()
-    joined_toc = joined.getToC()
     if os.path.isfile(args.output) and not args.no_append:
-        orig = fitz.open(args.output)
-        joined.insertPDF(orig)
-        joined_toc.extend(orig.getToC())
-        orig.close()
+        joined = pikepdf.Pdf.open(args.output, allow_overwriting_input=True)
+    else:
+        joined = pikepdf.Pdf.new()
 
-    for i, article in enumerate(articles):
-        pdf = temp_path(i)
-        if os.path.isfile(pdf):
-            inp_doc = fitz.open(pdf)
-            if article.get('toc_label', None):
-                joined_toc.append((1, article['toc_label'], joined.pageCount + 1))
-            joined.insertPDF(inp_doc, annots=False)
-            inp_doc.close()
-        else:
-            print('WARNING: PDF not found for {}'.format(article['url']))
-    joined.setToC(joined_toc)
-    joined.save(args.output, garbage=4, clean=True, deflate=True, incremental=False)
+    page_count = len(joined.pages)
+    with joined.open_outline() as outline:
+        for i, article in enumerate(articles):
+            pdf = temp_path(i)
+            if os.path.isfile(pdf):
+                with pikepdf.Pdf.open(pdf) as inp_doc:
+                    if article.get('toc_label', None):
+                        outline.root.append(pikepdf.OutlineItem(article['toc_label'], page_count))
+                    page_count += len(inp_doc.pages)
+                    joined.pages.extend(inp_doc.pages)
+            else:
+                print('WARNING: PDF not found for {}'.format(article['url']))
+    joined.save(args.output, linearize=True)
 
     mark_seen(seen_articles)
 

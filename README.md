@@ -24,7 +24,7 @@ for managing feeds from the command line.
 The CLI command `pdf` creates a PDF of (a subset of) the articles from a given
 amount of time before now. It uses
 [playwright](https://github.com/microsoft/playwright-python) and
-[pymupdf](https://github.com/pymupdf/PyMuPDF). Unless you specify
+[pikepdf](https://github.com/pikepdf/pikepdf). Unless you specify
 `--non-interactive` an editor (change by setting the `EDITOR` env var) will pop
 up and you can delete any articles you don't want in the PDF.
 
@@ -34,7 +34,7 @@ To get `python-playwright` you can do:
         python -m playwright install # download browsers
 
 Each article is downloaded using playwright to a temporary file and then they
-are all stitched together using `pymupdf`. A ToC/Outline is added to the final
+are all stitched together using `pikepdf`. A ToC/Outline is added to the final
 PDF with an entry for each article to make it easy to jump to articles.
 
 By default (disable with `--no-append`) if the output PDF file already exists
