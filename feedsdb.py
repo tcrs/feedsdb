@@ -340,6 +340,9 @@ def make_pdf(conn, args):
                     except ValueError:
                         pass
         os.unlink(filename)
+        if ret.returncode != 0:
+            print('Editor failed. Aborting.')
+            sys.exit(ret.returncode)
 
         articles = [x for i, x in enumerate(orig_articles)
             if cmd_map.get(i, None) in {'pick', 'p'}]
