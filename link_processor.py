@@ -46,6 +46,13 @@ footer, aside, .page__sidebar {
 }
 '''
 
+# body is set to display:flex which seems to disable text wrapping?
+_cryptography_dispatches_css = '''
+body {
+    display: block !important;
+}
+'''
+
 def _options(url):
     opts = _default_opts.copy()
 
@@ -60,6 +67,8 @@ def _options(url):
         opts.update(css = _acoup_css)
     elif 'torrentfreak.com' in url:
         opts.update(css = _torrentfreak_css)
+    elif 'buttondown.email/cryptography-dispatches/' in url:
+        opts.update(css = _cryptography_dispatches_css)
     else:
         # Kill sticky headers etc by default on sites not explictly handled
         opts.update(kill_sticky = True)
