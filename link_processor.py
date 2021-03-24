@@ -152,8 +152,8 @@ def process_link(link, comments_link, title, feed_name):
                 desc = _desc(page_link, title + ' (page {}/{})'.format(i, n_pages), feed_name),
                 **_options(page_link))
 
-    # Don't read torrentfreak comments
-    if comments_link and 'torrentfreak' not in comments_link:
+    # Only want lobste.rs and hacker news comments
+    if comments_link and ('lobste.rs' in comments_link or 'news.ycombinator.com' in comments_link):
         yield dict(url = comments_link,
             desc = _desc(comments_link, title, feed_name + ' (comments)'),
             toc_label = _toc_label(comments_link, title, feed_name + ' (comments)'),
