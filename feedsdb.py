@@ -14,6 +14,7 @@ import functools
 import feedparser
 import datetime
 import xml.etree.ElementTree as ET
+import urllib.error
 
 import cgi
 import cgitb
@@ -39,7 +40,13 @@ def do_update(conn, force=False, verbose=False):
     for name, url, etag, modified in cursor:
         if verbose:
             print('{} ({})'.format(name, url))
-        feed = feedparser.parse(url, etag=etag, modified=modified)
+        try:
+            feed = feedparser.parse(url, etag=etag, modified=modified)
+        except urllib.error.URLError as e:
+            if verbose:
+                print('error updating {} ({}): {}'.format(name, url, e))
+            continue
+
         conn.execute('UPDATE feeds SET last_update = ? WHERE name = ?', (now, name))
         if not feed.feed:
             # OK, just nothing new (via etag or modified time)
