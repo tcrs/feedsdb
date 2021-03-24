@@ -53,6 +53,12 @@ body {
 }
 '''
 
+_pipeline_css = '''
+#comments {
+    display: none !important;
+}
+'''
+
 def _options(url):
     opts = _default_opts.copy()
 
@@ -69,6 +75,8 @@ def _options(url):
         opts.update(css = _torrentfreak_css)
     elif 'buttondown.email/cryptography-dispatches/' in url:
         opts.update(css = _cryptography_dispatches_css)
+    elif 'blogs.sciencemag.org/pipeline/' in url:
+        opts.update(css = _pipeline_css, kill_sticky = True)
     else:
         # Kill sticky headers etc by default on sites not explictly handled
         opts.update(kill_sticky = True)
