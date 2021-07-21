@@ -192,7 +192,7 @@ def make_pdf(conn, args):
         raise
 
     try:
-        from playwright import async_playwright
+        from playwright.async_api import async_playwright
     except ModuleNotFoundError:
         print('Please install python-playwright')
         raise
@@ -243,37 +243,37 @@ def make_pdf(conn, args):
 
         mediatype = spec.pop('mediatype', None)
         if mediatype is not None:
-            await page.emulateMedia(media = mediatype)
+            await page.emulate_media(media = mediatype)
 
-        await page.waitForTimeout(500)
+        await page.wait_for_timeout(500)
 
         await page.pdf(**spec)
 
     async def get_pdf(browser, spec):
         context_opts = dict(
-            acceptDownloads = True,
-            javaScriptEnabled = False,
-            colorScheme = 'light'
+            accept_downloads = True,
+            java_script_enabled = False,
+            color_scheme = 'light'
         )
 
         if 'useragent' in spec:
-            context_opts['userAgent'] = spec.pop('useragent')
+            context_opts['user_agent'] = spec.pop('useragent')
         if 'viewport' in spec:
             context_opts['viewport'] = spec.pop('viewport')
 
-        context = await browser.newContext(**context_opts)
+        context = await browser.new_context(**context_opts)
 
-        page = await context.newPage()
+        page = await context.new_page()
 
         # Default 2 minute nav timeout
-        page.setDefaultNavigationTimeout(2 * 60 * 1000)
+        page.set_default_navigation_timeout(2 * 60 * 1000)
 
         url = spec.pop('url')
         print("Starting: " + url)
 
         for i in range(3):
             try:
-                await page.goto(url, waitUntil='networkidle')
+                await page.goto(url, wait_until='networkidle')
                 break
             except Exception as e:
                 print('Fail: {}: {}'.format(url, e))

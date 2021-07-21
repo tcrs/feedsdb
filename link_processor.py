@@ -67,7 +67,7 @@ def _options(url):
         opts.update(mediatype = 'screen')
     elif 'arstechnica.com' in url:
         # Ars images are all divs with a background image set!
-        opts.update(printBackground = True)
+        opts.update(print_background = True)
         opts.update(css = _ars_css)
     elif 'acoup.blog' in url:
         opts.update(css = _acoup_css)
