@@ -59,6 +59,20 @@ _pipeline_css = '''
 }
 '''
 
+# Article HTML is stashed in a big JSON object
+# Not running MBs of JS from Bloomberg to get it!
+_bloomberg_script = '''
+    var dest = document.querySelector('div[data-component-root="ArticleBody"] div');
+    var src = document.querySelector('script[data-component-props="ArticleBody"]');
+    dest.innerHTML = JSON.parse(src.textContent).body;
+'''
+
+_bloomberg_css = '''
+.leaderboard-wrapper, .postr-recirc {
+    display: none !important;
+}
+'''
+
 def _options(url):
     opts = _default_opts.copy()
 
@@ -77,6 +91,9 @@ def _options(url):
         opts.update(css = _cryptography_dispatches_css)
     elif 'blogs.sciencemag.org/pipeline/' in url:
         opts.update(css = _pipeline_css, kill_sticky = True)
+    elif 'bloomberg.com' in url:
+        opts.update(script = _bloomberg_script, css = _bloomberg_css, kill_sticky=True)
+        opts.update(mediatype = 'screen')
     else:
         # Kill sticky headers etc by default on sites not explictly handled
         opts.update(kill_sticky = True)
