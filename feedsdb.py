@@ -213,6 +213,10 @@ def make_pdf(conn, args):
                     toc_label = title)
 
     async def pdf_from_page(page, spec):
+        script = spec.pop('script', None)
+        if script is not None:
+            await page.evaluate('() => {' + script + '}')
+
         css = spec.pop('css', None)
         if css is not None:
             # page.addStyleTag will hang if the page has javascript disabled
