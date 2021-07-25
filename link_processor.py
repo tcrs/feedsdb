@@ -59,6 +59,19 @@ _pipeline_css = '''
 }
 '''
 
+_conversation_css = '''
+.wrapper, .content, .content-body, .grid-twelve {
+    width: 100% !important;
+    margin: 0 !important;
+}
+.content-body {
+    font-size: 22px !important;
+}
+.content-sidebar {
+    display: none !important;
+}
+'''
+
 # Article HTML is stashed in a big JSON object
 # Not running MBs of JS from Bloomberg to get it!
 _bloomberg_script = '''
@@ -91,6 +104,8 @@ def _options(url):
         opts.update(css = _cryptography_dispatches_css)
     elif 'blogs.sciencemag.org/pipeline/' in url:
         opts.update(css = _pipeline_css, kill_sticky = True)
+    elif 'theconversation.com' in url:
+        opts.update(css = _conversation_css)
     elif 'bloomberg.com' in url:
         opts.update(script = _bloomberg_script, css = _bloomberg_css, kill_sticky=True)
         opts.update(mediatype = 'screen')
