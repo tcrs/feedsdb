@@ -184,6 +184,7 @@ def list_feeds(conn, args):
 @with_db
 def make_pdf(conn, args):
     import asyncio
+    import mimetypes
 
     try:
         import pikepdf
@@ -276,14 +277,48 @@ def make_pdf(conn, args):
         print("Starting: " + url)
 
         for i in range(3):
-            try:
-                await page.goto(url, wait_until='networkidle')
-                break
-            except Exception as e:
-                print('Fail: {}: {}'.format(url, e))
+            success = False
 
-        await pdf_from_page(page, spec)
-        print('Done: ' + url)
+            download_task = asyncio.create_task(page.wait_for_event('download'))
+            goto_task = asyncio.create_task(page.goto(url, wait_until='networkidle'))
+            try:
+                await goto_task
+                await pdf_from_page(page, spec)
+                print('Done goto: ' + url)
+                await page.close()
+                success = True
+            except Exception as e:
+                pass
+
+            try:
+                download = await download_task
+                mt, _ = mimetypes.guess_type(download.suggested_filename)
+                if mt != 'application/pdf':
+                    await download.cancel()
+                    print('Fail download: {}: does not look like a PDF: {}'.format(
+                        url, download.suggested_filename))
+                    # Do not retry, just going to hit this case again
+                else:
+                    await download.save_as(spec['path'])
+                    print('Done download: ' + url)
+                await page.close()
+                success = True
+            except Exception as e:
+                # TODO: still get warnings out of the runtime saying that the
+                # underlying Future exception was not retrieved. Can't work out
+                # why and how to stop it happening - this is the exception here!
+                if not success:
+                    print('Fail download: {}: {}'.format(url, e))
+
+            if success:
+                return
+            elif goto_task.done() and not goto_task.cancelled() and goto_task.exception() is not None:
+                # If download is done then goto always fails with an aborted
+                # error, only print the failure if download doesn't succeed
+                print('Fail goto: {}: {}'.format(url, goto_task.exception()))
+
+        await page.close()
+        raise Exception('Abandoning: {}'.format(url))
 
     async def get_all_pdfs(specs, max_concurrent):
         async with async_playwright() as p:
