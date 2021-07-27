@@ -439,7 +439,11 @@ def make_pdf(conn, args):
                     joined.pages.extend(inp_doc.pages)
             else:
                 print('WARNING: PDF not found for {}'.format(article['url']))
-    joined.save(args.output, linearize=True)
+
+    if page_count == 0:
+        print('WARNING: final PDF empty, not creating it')
+    else:
+        joined.save(args.output, linearize=True)
 
     mark_seen(seen_articles)
 
