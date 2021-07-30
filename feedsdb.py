@@ -320,9 +320,12 @@ def make_pdf(conn, args):
         await page.close()
         raise Exception('Abandoning: {}'.format(url))
 
-    async def get_all_pdfs(specs, max_concurrent):
+    async def get_all_pdfs(specs, max_concurrent, debug_browser):
         async with async_playwright() as p:
-            browser = await p.chromium.launch()
+            if debug_browser:
+                browser = await p.chromium.launch(slow_mo=1000, headless=False)
+            else:
+                browser = await p.chromium.launch()
             running = set()
             for spec in specs:
                 if len(running) >= max_concurrent:
@@ -419,7 +422,7 @@ def make_pdf(conn, args):
         opts.pop('id', None)
         all_opts.append(opts)
 
-    asyncio.get_event_loop().run_until_complete(get_all_pdfs(all_opts, args.parallel))
+    asyncio.get_event_loop().run_until_complete(get_all_pdfs(all_opts, args.parallel, args.debug_browser))
 
     print('Merging...')
     if os.path.isfile(args.output) and not args.no_append:
@@ -476,6 +479,7 @@ if __name__ == '__main__':
 
     pdf_parser = subparsers.add_parser('pdf', help='Make a pdf file of articles')
     pdf_parser.add_argument('--url', action='append', default=[], help='For testing. Create a PDF using just the given URLs as if they were feed entries.')
+    pdf_parser.add_argument('--debug-browser', action='store_true', help='For testing. Run playwright-controlled browser in non-headless mode with slow_mo enabled. Note that PDFs can not be generated in this mode')
     pdf_parser.add_argument('--no-append', action='store_true', help='By default if the output PDF exists new articles will be appended to the end. This forces a new document to be created and overwrite the exiting one')
     pdf_parser.add_argument('--no-comments', action='store_true', help='Do not include comment links')
     pdf_parser.add_argument('--period', '-p', type=parse_period, help='How long in the past to start listing articles from (default since last pdf generation)')
