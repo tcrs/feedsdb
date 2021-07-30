@@ -30,8 +30,8 @@ up and you can delete any articles you don't want in the PDF.
 
 To get `python-playwright` you can do:
 
-        pip install playwright # install playwright-python
-        python -m playwright install # download browsers
+        pip install playwright        # install playwright-python
+        playwright install chromium   # download chromium browser binary
 
 Each article is downloaded using playwright to a temporary file and then they
 are all stitched together using `pikepdf`. A ToC/Outline is added to the final
